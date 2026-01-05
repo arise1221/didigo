@@ -34,14 +34,14 @@
     ::-webkit-scrollbar-thumb { background: #451a1a; border-radius: 4px; }
     ::-webkit-scrollbar-thumb:hover { background: #7f1d1d; }
     
-    /* 極光背景動畫 */
+    /* 極光背景動畫 - 改為火紅與金黃色系 */
     .orb { position: fixed; border-radius: 50%; filter: blur(100px); z-index: -1; pointer-events: none; animation: float 15s infinite ease-in-out; }
-    .orb-1 { top: -10%; left: -10%; width: 60vw; height: 60vw; background: rgba(220, 38, 38, 0.15); } 
-    .orb-2 { bottom: -10%; right: -10%; width: 60vw; height: 60vw; background: rgba(245, 158, 11, 0.12); animation-delay: -5s; }
+    .orb-1 { top: -10%; left: -10%; width: 60vw; height: 60vw; background: rgba(220, 38, 38, 0.15); /* Red-600 */ } 
+    .orb-2 { bottom: -10%; right: -10%; width: 60vw; height: 60vw; background: rgba(245, 158, 11, 0.12); /* Amber-500 */ animation-delay: -5s; }
     
     @keyframes float { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(20px, 20px); } }
     
-    /* UI 特效 */
+    /* UI 特效 - 赤焰光暈 */
     .tech-input:focus { box-shadow: 0 0 15px rgba(239, 68, 68, 0.3); border-color: #ef4444; }
     .glass-card { background: rgba(20, 5, 5, 0.7); backdrop-filter: blur(16px); border: 1px solid rgba(127, 29, 29, 0.3); }
     
@@ -58,7 +58,7 @@
     import React, { useState, useEffect, useRef } from 'react';
     import { createRoot } from 'react-dom/client';
     import { initializeApp } from 'firebase/app';
-    import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
+    import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, signInWithCustomToken, signInAnonymously } from 'firebase/auth';
     import { getFirestore, collection, doc, setDoc, getDocs, updateDoc, deleteDoc, onSnapshot, arrayUnion, writeBatch } from 'firebase/firestore';
     import { 
       User, Mail, Star, CreditCard, LogOut, Search, Plus, Trash2, Edit3, ChevronRight, 
@@ -89,7 +89,7 @@
     let currentAppId = 'membership-system-tech';
     let initialAuthToken = undefined;
 
-    // 自動偵測環境變數
+    // 自動偵測環境變數 (Canvas 預覽用)
     if (typeof __firebase_config !== 'undefined') {
       try {
         firebaseConfig = JSON.parse(__firebase_config);
@@ -122,8 +122,8 @@
       { points: 1000, rate: 0.8, label: "VIP 金卡 8折" }
     ];
 
-    // 使用 Unsplash 的雲朵照片作為 Logo
-    const CLOUD_LOGO_URL = "https://images.unsplash.com/photo-1534088568595-a066f410bcda?auto=format&fit=crop&q=80&w=200&h=200";
+    // 使用金色筋斗雲 Icon 作為 Logo
+    const CLOUD_LOGO_URL = "https://cdn-icons-png.flaticon.com/512/1163/1163736.png"; 
 
     const App = () => {
       // User State
@@ -159,17 +159,21 @@
       const [editingProduct, setEditingProduct] = useState(false);
       const [tempRules, setTempRules] = useState([]); 
       const [newMember, setNewMember] = useState({ name: '', email: '', phone: '', address: '', birthday: '', points: 0, level: '一般會員', photo: '' });
+      const [editMemberForm, setEditMemberForm] = useState(null); // Admin edit member
       const [newsForm, setNewsForm] = useState({ title: '', content: '' });
       const [paymentForm, setPaymentForm] = useState({ orderId: '', last5: '', date: '' });
       const [pointForm, setPointForm] = useState({ memberId: '', memberName: '', amount: 10, reason: '' });
+      const [resetEmail, setResetEmail] = useState('');
 
       // Modals
       const [showAddMemberModal, setShowAddMemberModal] = useState(false);
+      const [showEditMemberModal, setShowEditMemberModal] = useState(false); // New Edit Modal
       const [showProductModal, setShowProductModal] = useState(false);
       const [showPointModal, setShowPointModal] = useState(false);
       const [showOrderDetailModal, setShowOrderDetailModal] = useState(false);
       const [showNewsModal, setShowNewsModal] = useState(false);
       const [showPaymentModal, setShowPaymentModal] = useState(false);
+      const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false); // Forgot Password Modal
       const [selectedOrder, setSelectedOrder] = useState(null);
       
       const [showAuthErrorModal, setShowAuthErrorModal] = useState(false);
@@ -298,6 +302,31 @@
         }
       };
 
+      // Forgot Password Logic
+      const handleForgotPassword = async () => {
+        if (!resetEmail) { showToast('請輸入 Email', 'error'); return; }
+        try {
+          await sendPasswordResetEmail(auth, resetEmail);
+          showToast('重設密碼信已寄出，請檢查信箱');
+          setShowForgotPasswordModal(false);
+        } catch (e) {
+          showToast('發送失敗：' + e.message, 'error');
+        }
+      };
+
+      // Admin Send Reset Email Logic
+      const handleAdminResetPassword = async (email) => {
+        if (!email) { showToast('此會員無 Email 資料', 'error'); return; }
+        if (window.confirm(`確定要發送密碼重設信給 ${email} 嗎？`)) {
+            try {
+                await sendPasswordResetEmail(auth, email);
+                showToast(`已發送重設信至 ${email}`);
+            } catch (e) {
+                showToast('發送失敗：' + e.message, 'error');
+            }
+        }
+      };
+
       const handleSignup = async (e) => {
         if(e) e.preventDefault();
         if (!signupForm.name || !signupForm.email || !signupForm.password) { showToast('請填寫完整資料 (含密碼)', 'error'); return; }
@@ -398,6 +427,24 @@
         const data = { ...newMember, id, points: Number(newMember.points)||0, history: [], orders: [], createdAt: new Date().toISOString(), photo: newMember.photo || `https://api.dicebear.com/7.x/avataaars/svg?seed=${newMember.name}` };
         await setDoc(doc(db, 'artifacts', currentAppId, 'public', 'data', 'members', id), data);
         setShowAddMemberModal(false); showToast('已新增會員');
+      };
+
+      // Admin Edit Member Logic
+      const handleAdminUpdateMember = async () => {
+        if (!editMemberForm || !editMemberForm.id) return;
+        try {
+            // Update fields in Firestore
+            await setDoc(doc(db, 'artifacts', currentAppId, 'public', 'data', 'members', editMemberForm.id), {
+                ...editMemberForm,
+                points: Number(editMemberForm.points)
+            }, { merge: true });
+            
+            setShowEditMemberModal(false);
+            showToast('會員資料已更新');
+        } catch (e) {
+            console.error(e);
+            showToast('更新失敗', 'error');
+        }
       };
 
       const handleSaveProduct = async () => {
@@ -524,7 +571,7 @@
                     <div className="relative group/input"><Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within/input:text-red-400" size={20}/><input type="email" placeholder="電子郵件" className="tech-input w-full p-4 pl-12 bg-[#0F0505]/80 border border-slate-800 rounded-xl text-white outline-none transition-all duration-300" value={loginForm.email} onChange={e => setLoginForm({...loginForm, email: e.target.value})} /></div>
                     <div className="relative group/input"><Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within/input:text-red-400" size={20}/><input type="password" placeholder="密碼" className="tech-input w-full p-4 pl-12 bg-[#0F0505]/80 border border-slate-800 rounded-xl text-white outline-none transition-all duration-300" value={loginForm.password} onChange={e => setLoginForm({...loginForm, password: e.target.value})} /></div>
                     <button type="submit" className="w-full bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-500 hover:to-orange-500 text-white py-4 rounded-xl font-bold shadow-[0_0_20px_rgba(239,68,68,0.4)] hover:shadow-[0_0_30px_rgba(249,115,22,0.6)] transition-all duration-300 transform active:scale-[0.98] flex items-center justify-center gap-2"><span>連接系統</span><ArrowRight size={16}/></button>
-                    <div className="flex justify-between items-center pt-2 text-sm"><span className="text-slate-500 cursor-pointer hover:text-slate-300">忘記密碼？</span><span onClick={() => setView('signup')} className="text-amber-500 hover:text-amber-400 hover:underline cursor-pointer">註冊新帳號</span></div>
+                    <div className="flex justify-between items-center pt-2 text-sm"><span className="text-slate-500 cursor-pointer hover:text-slate-300" onClick={() => setShowForgotPasswordModal(true)}>忘記密碼？</span><span onClick={() => setView('signup')} className="text-amber-500 hover:text-amber-400 hover:underline cursor-pointer">註冊新帳號</span></div>
                   </form>
                   <div className="absolute bottom-3 right-5 text-[10px] text-slate-700 font-mono tracking-widest opacity-50">muyun</div>
                 </div>
@@ -671,6 +718,7 @@
                               <td className="p-4 font-mono text-amber-400">{m.points}</td>
                               <td className="p-4 text-right">
                                 <button onClick={() => { setPointForm({ memberId: m.id, memberName: m.name, amount: 10, reason: '' }); setShowPointModal(true); }} className="text-amber-500 bg-amber-900/20 px-3 py-1 rounded text-xs font-bold mr-2 hover:bg-amber-900/40">點數</button>
+                                <button onClick={() => { setEditMemberForm(m); setShowEditMemberModal(true); }} className="text-slate-300 bg-slate-800 px-3 py-1 rounded text-xs font-bold mr-2 hover:bg-slate-700"><Edit3 size={16}/></button>
                                 <button onClick={() => deleteDoc(doc(db, 'artifacts', currentAppId, 'public', 'data', 'members', m.id))} className="text-slate-600 hover:text-red-400"><Trash2 size={18} /></button>
                               </td>
                             </tr>
@@ -876,7 +924,105 @@
             </div>
           )}
 
-          {/* Modals */}
+          {/* Forgot Password Modal */}
+          {showForgotPasswordModal && (
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <div className="bg-[#1a0b0b] border border-red-900/50 rounded-2xl w-full max-w-md p-6 shadow-2xl relative">
+                <button onClick={() => setShowForgotPasswordModal(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white"><X size={20}/></button>
+                <h3 className="text-2xl font-bold text-white mb-4 text-center">重設密碼</h3>
+                <p className="text-slate-400 text-sm mb-6 text-center">請輸入您的電子郵件，系統將發送重設連結給您。</p>
+                <input 
+                  type="email" 
+                  placeholder="請輸入註冊 Email" 
+                  className="w-full p-3 bg-[#0F0505] border border-red-900/50 rounded-xl text-white outline-none focus:border-amber-500 mb-4" 
+                  value={resetEmail} 
+                  onChange={e => setResetEmail(e.target.value)} 
+                />
+                <button onClick={handleForgotPassword} className="w-full bg-red-600 hover:bg-red-500 text-white py-3 rounded-xl font-bold transition-all">發送重設信</button>
+              </div>
+            </div>
+          )}
+
+          {/* Admin Edit Member Modal */}
+          {showEditMemberModal && editMemberForm && (
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <div className="bg-[#1a0b0b] border border-red-900/50 rounded-2xl w-full max-w-lg p-6 shadow-2xl overflow-y-auto max-h-[90vh]">
+                <div className="flex justify-between items-center mb-6">
+                    <h3 className="font-bold text-xl text-white">編輯會員資料</h3>
+                    <button onClick={() => setShowEditMemberModal(false)} className="text-slate-500 hover:text-white"><X size={24}/></button>
+                </div>
+                
+                <div className="space-y-4">
+                  <div className="bg-red-900/10 p-4 rounded-xl border border-red-900/30 flex items-center gap-4 mb-4">
+                     <div className="w-16 h-16 rounded-full bg-slate-800 overflow-hidden">
+                        <img src={editMemberForm.photo} className="w-full h-full object-cover" />
+                     </div>
+                     <div>
+                        <div className="text-white font-bold text-lg">{editMemberForm.name}</div>
+                        <div className="text-slate-400 text-xs">{editMemberForm.id}</div>
+                     </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                        <label className="text-xs text-slate-400 mb-1 block">姓名</label>
+                        <input type="text" className="w-full p-3 bg-[#0F0505] border border-red-900/50 rounded text-white outline-none focus:border-amber-500" value={editMemberForm.name} onChange={e => setEditMemberForm({...editMemberForm, name: e.target.value})} />
+                    </div>
+                    <div>
+                        <label className="text-xs text-slate-400 mb-1 block">電話</label>
+                        <input type="text" className="w-full p-3 bg-[#0F0505] border border-red-900/50 rounded text-white outline-none focus:border-amber-500" value={editMemberForm.phone} onChange={e => setEditMemberForm({...editMemberForm, phone: e.target.value})} />
+                    </div>
+                  </div>
+                  
+                  <div>
+                      <label className="text-xs text-slate-400 mb-1 block">Email (唯讀)</label>
+                      <input type="email" disabled className="w-full p-3 bg-[#1a0b0b] border border-slate-800 rounded text-slate-500 cursor-not-allowed" value={editMemberForm.email} />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                        <label className="text-xs text-slate-400 mb-1 block">生日</label>
+                        <input type="date" className="w-full p-3 bg-[#0F0505] border border-red-900/50 rounded text-slate-300 outline-none focus:border-amber-500" value={editMemberForm.birthday} onChange={e => setEditMemberForm({...editMemberForm, birthday: e.target.value})} />
+                    </div>
+                    <div>
+                        <label className="text-xs text-slate-400 mb-1 block">地址</label>
+                        <input type="text" className="w-full p-3 bg-[#0F0505] border border-red-900/50 rounded text-white outline-none focus:border-amber-500" value={editMemberForm.address} onChange={e => setEditMemberForm({...editMemberForm, address: e.target.value})} />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                        <label className="text-xs text-slate-400 mb-1 block">等級</label>
+                        <select className="w-full p-3 bg-[#0F0505] border border-red-900/50 rounded text-white outline-none focus:border-amber-500" value={editMemberForm.level} onChange={e => setEditMemberForm({...editMemberForm, level: e.target.value})}>
+                          <option>一般會員</option>
+                          <option>黃金會員</option>
+                          <option>白金會員</option>
+                        </select>
+                    </div>
+                    <div>
+                         <label className="text-xs text-slate-400 mb-1 block">點數 (直接修正)</label>
+                         <input type="number" className="w-full p-3 bg-[#0F0505] border border-red-900/50 rounded text-white outline-none focus:border-amber-500" value={editMemberForm.points} onChange={e => setEditMemberForm({...editMemberForm, points: e.target.value})} />
+                    </div>
+                  </div>
+
+                  <div className="pt-4 border-t border-slate-800 mt-2">
+                     <label className="text-xs text-amber-500 mb-2 block font-bold flex items-center gap-1"><KeyRound size={12}/> 安全操作</label>
+                     <button onClick={() => handleAdminResetPassword(editMemberForm.email)} className="w-full border border-slate-600 text-slate-300 py-2 rounded hover:bg-slate-800 transition-colors text-sm">
+                        發送密碼重設信給會員
+                     </button>
+                     <p className="text-[10px] text-slate-500 mt-1">* 為保護帳號安全，管理員無法直接查看或設定密碼，請發送重設信讓會員自行修改。</p>
+                  </div>
+                </div>
+
+                <div className="flex gap-2 mt-8">
+                  <button onClick={() => setShowEditMemberModal(false)} className="flex-1 border border-slate-600 text-slate-300 p-3 rounded-xl hover:bg-slate-800">取消</button>
+                  <button onClick={handleAdminUpdateMember} className="flex-1 bg-red-600 text-white p-3 rounded-xl font-bold hover:bg-red-500 shadow-lg">儲存變更</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Other Modals */}
           {showPaymentModal && <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"><div className="bg-[#1a0b0b] border border-red-900/50 rounded-2xl w-full max-w-md p-6 shadow-2xl"><h3 className="font-bold text-xl text-white mb-4">回報匯款資訊</h3><div className="space-y-4"><div className="p-3 bg-yellow-900/20 border border-yellow-700/30 rounded text-sm text-yellow-200">訂單編號: <span className="font-mono">{paymentForm.orderId}</span></div><div><label className="text-sm text-slate-400 mb-1 block">匯款日期</label><input type="date" className="w-full p-3 bg-[#0F0505] border border-red-900/50 rounded text-white outline-none focus:border-amber-500" value={paymentForm.date} onChange={e => setPaymentForm({...paymentForm, date: e.target.value})} /></div><div><label className="text-sm text-slate-400 mb-1 block">帳號後五碼</label><input type="text" maxLength="5" placeholder="例如: 12345" className="w-full p-3 bg-[#0F0505] border border-red-900/50 rounded text-white outline-none focus:border-amber-500 font-mono text-lg tracking-widest" value={paymentForm.last5} onChange={e => setPaymentForm({...paymentForm, last5: e.target.value})} /></div></div><div className="flex gap-2 mt-6"><button onClick={() => setShowPaymentModal(false)} className="flex-1 border border-slate-600 text-slate-300 p-2 rounded hover:bg-slate-800">取消</button><button onClick={handleReportPayment} className="flex-1 bg-red-600 text-white p-2 rounded font-bold hover:bg-red-500">送出回報</button></div></div></div>}
           {showNewsModal && <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"><div className="bg-[#1a0b0b] border border-red-900/50 rounded-2xl w-full max-w-lg p-6 shadow-2xl relative max-h-[80vh] flex flex-col"><div className="flex justify-between items-center mb-6"><h3 className="font-bold text-xl text-white flex items-center gap-2"><Megaphone className="text-amber-400" /> 最新公告</h3><button onClick={() => setShowNewsModal(false)} className="text-slate-500 hover:text-white"><X size={20}/></button></div><div className="space-y-4 overflow-y-auto pr-2 custom-scrollbar">{newsList.length > 0 ? newsList.map(item => (<div key={item.id} className="bg-red-950/10 p-5 rounded-xl border border-red-900/30 hover:border-amber-500/30 transition-all"><div className="flex justify-between items-start mb-2"><h4 className="font-bold text-white text-lg">{item.title}</h4><span className="text-xs text-slate-500 bg-[#0F0505] px-2 py-1 rounded-full">{new Date(item.date).toLocaleDateString()}</span></div><p className="text-slate-300 text-sm whitespace-pre-wrap leading-relaxed">{item.content}</p></div>)) : <div className="text-center py-10 text-slate-500"><Info className="mx-auto mb-2 opacity-50" size={32} />目前沒有最新公告</div>}</div></div></div>}
           {showAddMemberModal && <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"><div className="bg-[#1a0b0b] border border-red-900/50 rounded-2xl w-full max-w-lg p-6 shadow-2xl overflow-y-auto max-h-[90vh]"><h3 className="font-bold text-xl text-white mb-4">手動新增會員</h3><div className="space-y-3"><div className="grid grid-cols-2 gap-3"><input type="text" placeholder="姓名" className="p-3 bg-[#0F0505] border border-red-900/50 rounded text-white outline-none focus:border-amber-500" value={newMember.name} onChange={e => setNewMember({...newMember, name: e.target.value})} /><input type="text" placeholder="電話" className="p-3 bg-[#0F0505] border border-red-900/50 rounded text-white outline-none focus:border-amber-500" value={newMember.phone} onChange={e => setNewMember({...newMember, phone: e.target.value})} /></div><input type="email" placeholder="Email" className="w-full p-3 bg-[#0F0505] border border-red-900/50 rounded text-white outline-none focus:border-amber-500" value={newMember.email} onChange={e => setNewMember({...newMember, email: e.target.value})} /><div className="grid grid-cols-2 gap-3"><input type="date" className="p-3 bg-[#0F0505] border border-red-900/50 rounded text-slate-400 outline-none focus:border-amber-500" value={newMember.birthday} onChange={e => setNewMember({...newMember, birthday: e.target.value})} /><input type="text" placeholder="地址" className="p-3 bg-[#0F0505] border border-red-900/50 rounded text-white outline-none focus:border-amber-500" value={newMember.address} onChange={e => setNewMember({...newMember, address: e.target.value})} /></div><div className="grid grid-cols-2 gap-3"><input type="number" placeholder="初始點數" className="p-3 bg-[#0F0505] border border-red-900/50 rounded text-white outline-none focus:border-amber-500" value={newMember.points} onChange={e => setNewMember({...newMember, points: e.target.value})} /><select className="p-3 bg-[#0F0505] border border-red-900/50 rounded text-white outline-none focus:border-amber-500" value={newMember.level} onChange={e => setNewMember({...newMember, level: e.target.value})}><option>一般會員</option><option>黃金會員</option><option>白金會員</option></select></div></div><div className="flex gap-2 mt-6"><button onClick={() => setShowAddMemberModal(false)} className="flex-1 border border-slate-600 text-slate-300 p-2 rounded hover:bg-slate-800">取消</button><button onClick={handleAdminAddMember} className="flex-1 bg-red-600 text-white p-2 rounded font-bold hover:bg-red-500">確認新增</button></div></div></div>}
