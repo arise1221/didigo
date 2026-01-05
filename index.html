@@ -68,7 +68,7 @@
       ShieldCheck, LayoutDashboard, UserPlus, Image as ImageIcon, Camera, Download, Upload, Gift, 
       History, TrendingUp, Phone, MapPin, Calendar, ShoppingBag, Tag, Package, ShoppingCart,
       Settings, Save, X, Truck, CheckCircle, Zap, Cpu, AlertTriangle, Bell, Megaphone, Info,
-      MessageCircle, Send, MessageSquare, ExternalLink, Lock, Minus, ArrowRight, Flame, HelpCircle, FileJson, FileSpreadsheet, KeyRound
+      MessageCircle, Send, MessageSquare, ExternalLink, Lock, Minus, ArrowRight, Flame, HelpCircle, FileJson, FileSpreadsheet, KeyRound, BarChart3, Receipt
     } from 'lucide-react';
 
     // --- ⚠️ 請在此填入 Firebase 設定 ⚠️ ---
@@ -166,8 +166,6 @@
       const [paymentForm, setPaymentForm] = useState({ orderId: '', last5: '', date: '' });
       const [pointForm, setPointForm] = useState({ memberId: '', memberName: '', amount: 10, reason: '' });
       const [resetEmail, setResetEmail] = useState('');
-      
-      // Admin Password Change State
       const [adminNewPassword, setAdminNewPassword] = useState('');
 
       // Modals
@@ -317,7 +315,6 @@
         }
       };
 
-      // Admin Change OWN Password
       const handleUpdateAdminPassword = async () => {
         if (!adminNewPassword || adminNewPassword.length < 6) {
              showToast('密碼長度需至少 6 位元', 'error');
@@ -429,6 +426,20 @@
         await updateDoc(doc(db, 'artifacts', currentAppId, 'public', 'data', 'members', memberData.id), { orders: updatedOrders });
         showToast('回報成功'); setShowPaymentModal(false);
       };
+
+      // 新增：取消訂單
+      const handleDeleteOrder = async (orderId) => {
+        if(!window.confirm('確定要取消此訂單嗎？')) return;
+        try {
+            const memberRef = doc(db, 'artifacts', currentAppId, 'public', 'data', 'members', memberData.id);
+            const updatedOrders = memberData.orders.filter(o => o.orderId !== orderId);
+            await updateDoc(memberRef, { orders: updatedOrders });
+            showToast('訂單已取消');
+        } catch (e) {
+            console.error(e);
+            showToast('取消失敗', 'error');
+        }
+      };
       
       const handleConfirmPayment = async (oid, mid) => {
         const m = allMembers.find(x => x.id === mid); if(!m) return;
@@ -502,6 +513,7 @@
         setShowPointModal(false); showToast('點數更新');
       };
 
+      // --- Import / Export Logic (Modified to JSON) ---
       const exportData = () => {
         if (allMembers.length === 0) { showToast('無資料可匯出', 'error'); return; }
         const jsonString = JSON.stringify(allMembers, null, 2);
@@ -674,10 +686,57 @@
                           <div><div className="font-bold text-slate-200">{new Date(o.date).toLocaleDateString()}</div><div className="text-slate-500 text-xs">{o.items.length} 項商品</div></div>
                           <div className="text-right"><div className="font-bold text-amber-400">${o.totalAmount}</div><span className="text-xs text-slate-500">{o.status}</span></div>
                         </div>
-                        {o.status === 'pending' && <button onClick={()=>{setPaymentForm({orderId:o.orderId,last5:'',date:''});setShowPaymentModal(true)}} className="w-full bg-red-900/30 text-xs py-2 rounded border border-red-800 hover:bg-red-800 text-white">回報匯款</button>}
+                        {o.status === 'pending' && (
+                          <div className="flex gap-2 mt-2">
+                            <button onClick={()=>{setPaymentForm({orderId:o.orderId,last5:'',date:''});setShowPaymentModal(true)}} className="flex-1 bg-red-900/30 text-xs py-2 rounded border border-red-800 hover:bg-red-800 text-white">回報匯款</button>
+                            <button onClick={() => handleDeleteOrder(o.orderId)} className="flex-1 bg-slate-800 text-xs py-2 rounded border border-slate-600 hover:bg-slate-700 text-white">取消訂單</button>
+                          </div>
+                        )}
                       </div>
                     )) : <div className="text-center text-slate-600 py-10">尚無訂單</div>}
                   </div>
+                </div>
+
+                {/* Statistics Section (New) */}
+                <div className="bg-[#1a0b0b]/60 backdrop-blur-md p-6 rounded-3xl border border-red-900/30 mt-6">
+                   <h4 className="font-bold text-lg text-white mb-4 flex items-center gap-2"><BarChart3 className="text-amber-400"/> 消費分析報告</h4>
+                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                      <div className="bg-[#0F0505]/50 p-4 rounded-xl border border-red-900/20">
+                         <div className="text-slate-400 text-xs">總消費金額</div>
+                         <div className="text-2xl font-bold text-white mt-1">${memberData.orders ? memberData.orders.reduce((acc, curr) => acc + curr.totalAmount, 0) : 0}</div>
+                      </div>
+                      <div className="bg-[#0F0505]/50 p-4 rounded-xl border border-red-900/20">
+                         <div className="text-slate-400 text-xs">已完成訂單</div>
+                         <div className="text-2xl font-bold text-white mt-1">{memberData.orders ? memberData.orders.filter(o => o.status === 'shipped' || o.status === 'paid_confirmed').length : 0}</div>
+                      </div>
+                      <div className="bg-[#0F0505]/50 p-4 rounded-xl border border-red-900/20">
+                         <div className="text-slate-400 text-xs">平均客單價</div>
+                         <div className="text-2xl font-bold text-white mt-1">${memberData.orders && memberData.orders.length > 0 ? Math.round(memberData.orders.reduce((acc, curr) => acc + curr.totalAmount, 0) / memberData.orders.length) : 0}</div>
+                      </div>
+                   </div>
+                   
+                   <div className="overflow-x-auto">
+                     <table className="w-full text-left text-sm text-slate-300">
+                       <thead className="text-slate-500 border-b border-red-900/30 bg-red-950/10">
+                         <tr><th className="p-3">訂單編號</th><th className="p-3">日期</th><th className="p-3">商品內容</th><th className="p-3">金額</th><th className="p-3 text-right">狀態</th></tr>
+                       </thead>
+                       <tbody className="divide-y divide-red-900/20">
+                         {memberData.orders && memberData.orders.length > 0 ? [...memberData.orders].reverse().map((o, i) => (
+                           <tr key={i} className="hover:bg-red-900/10">
+                             <td className="p-3 font-mono text-xs">{o.orderId}</td>
+                             <td className="p-3 text-xs">{new Date(o.date).toLocaleDateString()}</td>
+                             <td className="p-3 text-xs">{o.items.map(item => `${item.name} x${item.quantity}`).join(', ')}</td>
+                             <td className="p-3 font-bold text-amber-400">${o.totalAmount}</td>
+                             <td className="p-3 text-right">
+                               <span className={`text-[10px] px-2 py-0.5 rounded-full ${o.status==='shipped'?'bg-green-900 text-green-400':o.status==='pending'?'bg-yellow-900 text-yellow-400':'bg-slate-800 text-slate-400'}`}>
+                                 {o.status === 'shipped' ? '已完成' : o.status === 'pending' ? '待付款' : o.status}
+                               </span>
+                             </td>
+                           </tr>
+                         )) : <tr><td colSpan="5" className="p-4 text-center text-slate-600">無交易紀錄</td></tr>}
+                       </tbody>
+                     </table>
+                   </div>
                 </div>
               </div>
             )}
